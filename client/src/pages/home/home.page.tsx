@@ -1,15 +1,19 @@
-import { v4 as uuidv4 } from 'uuid';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 
 import { Box, Button, Paper, SxProps, Theme } from '@mui/material';
 import { Page } from '../../components';
 import { ROUTE } from '../../router';
 import { createDinamicUrlString } from '../../utils';
+import { ICreateRoom, useServerResponse } from '../../hooks/useServerResponse';
+import { ServerEvents } from '../../hooks/useServerResponse';
+import { messagesService } from '../../services';
 
 export const Home = () => {
-  const navigate = useNavigate();
+  const createRoomResponse = useServerResponse<ICreateRoom>(
+    ServerEvents.RoomCreated,
+  );
   const startMeeting = () => {
-    navigate(createDinamicUrlString(ROUTE.Meeting, { meeting_id: uuidv4() }));
+    messagesService.createRoom();
   };
 
   const wrapperStyles: SxProps = {
@@ -35,6 +39,16 @@ export const Home = () => {
       width: '75vw',
     },
   });
+
+  if (createRoomResponse) {
+    return (
+      <Navigate
+        to={createDinamicUrlString(ROUTE.Meeting, {
+          meeting_id: createRoomResponse.roomId,
+        })}
+      />
+    );
+  }
 
   return (
     <Page>

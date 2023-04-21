@@ -1,4 +1,4 @@
-import { ChangeEventHandler, useState } from 'react';
+import { ChangeEventHandler, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -23,6 +23,14 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 
 import { StyledVideoDashboard } from './style';
 import { useToggle } from '../../hooks';
+import { Video } from '../video/video.component';
+import { messagesService } from '../../services';
+import {
+  ISendMessageToRoom,
+  ServerEvents,
+  useServerResponse,
+} from '../../hooks/useServerResponse';
+import { useParams } from 'react-router-dom';
 
 export const VideoDashboard = () => {
   const displayStyles: SxProps<Theme> = (theme) => ({
@@ -35,15 +43,6 @@ export const VideoDashboard = () => {
     borderRadius: '10px',
     minWidth: 0,
     minHeight: 0,
-  });
-
-  const videoStyles: SxProps<Theme> = (theme) => ({
-    width: '100%',
-    height: '100%',
-    backgroundColor: theme.palette.primary.contrastText,
-    borderRadius: '20px',
-    minWidth: 0,
-    minHeight: '20%',
   });
 
   const othersVideoStyles: SxProps<Theme> = (theme) => ({
@@ -85,19 +84,72 @@ export const VideoDashboard = () => {
     alignItems: 'center',
   });
 
+  const messageStyles: SxProps<Theme> = (theme) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'start',
+    color: theme.palette.primary.dark,
+  });
+
+  const { meeting_id: roomId } = useParams();
   const [message, setMessage] = useState<string>('');
+  const [allMessages, setAllMessages] = useState<ISendMessageToRoom[]>([]);
+
+  const newMessageFromServer = useServerResponse<ISendMessageToRoom>(
+    ServerEvents.NewMessage,
+  );
+
   const [isMicOn, toggleMic] = useToggle(false);
   const [isCamOn, toggleCam] = useToggle(false);
+  const [myVideoStream, setMyVideoStream] = useState<MediaStream | null>(null);
   const [isDialogOpen, toggleDialog] = useToggle(false);
 
-  const members = [
+  const handleNewMessage = (message: ISendMessageToRoom) => {
+    if (
+      allMessages.find(
+        (savedMessage) => message.messageBody === savedMessage.messageBody,
+      )
+    ) {
+      return;
+    }
+    setAllMessages((state) => {
+      const newState = state;
+      newState.push(message);
+      return newState;
+    });
+  };
+
+  const members: { id: number }[] = [
     { id: 1 },
     { id: 2 },
     { id: 3 },
     { id: 4 },
     { id: 5 },
-    { id: 6 },
   ];
+
+  const startVideoStream = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+      });
+      setMyVideoStream(stream);
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const stopVideoStream = async () => {
+    try {
+      if (myVideoStream) {
+        const tracks = myVideoStream.getTracks();
+        tracks.forEach((track) => track.stop());
+
+        setMyVideoStream(null);
+      }
+    } catch (err) {
+      console.log(err);
+    }
+  };
 
   const onMessageInput: ChangeEventHandler<HTMLInputElement> = (event) => {
     if (event && event.currentTarget.value) {
@@ -114,22 +166,49 @@ export const VideoDashboard = () => {
   };
 
   const sendMessage = () => {
-    console.log(message);
+    if (roomId) {
+      messagesService.sendMessageToRoom(message, roomId);
+    }
     setMessage('');
   };
+
+  useEffect(() => {
+    if (isCamOn) {
+      startVideoStream();
+    }
+
+    if (!isCamOn) {
+      stopVideoStream();
+    }
+  }, [isCamOn]);
+
+  useEffect(() => {
+    if (newMessageFromServer) {
+      handleNewMessage(newMessageFromServer);
+    }
+  }, [newMessageFromServer]);
 
   return (
     <StyledVideoDashboard>
       <Paper sx={displayStyles} component="section">
-        <Box component="video" sx={videoStyles}></Box>
+        <Video videoStream={myVideoStream} />
         <Box sx={othersVideoStyles}>
-          {members.map((member) => (
-            <Box sx={videoStyles} key={member.id}></Box>
-          ))}
+          {members &&
+            members.length > 0 &&
+            members.map((member) => (
+              <Video key={member.id} videoStream={myVideoStream} />
+            ))}
         </Box>
       </Paper>
       <Box sx={chatStyles} component="section">
-        Chat
+        {allMessages.map((message) => {
+          return (
+            <Box sx={messageStyles} key={message.messageBody}>
+              <p>Client: {message.clientId}</p>
+              <p>Client: {message.messageBody}</p>
+            </Box>
+          );
+        })}
       </Box>
       <Box sx={toolbaarStyles} component="section">
         <Box sx={{ display: 'flex', gap: '20px' }}>
